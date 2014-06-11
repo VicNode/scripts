@@ -2,7 +2,7 @@
 from os import environ
 from re import sub as substitute
 
-from keystoneclient.v2_0 import client as keystone_client
+from keystoneclient.v2_0 import client as keystonec
 from swiftclient import client as swiftc
 from cinderclient import client as cinderc
 
@@ -71,7 +71,7 @@ def list_merit_allocations(creds):
 
   merit_allocation_tenants = []
 
-  client = keystone_client.Client(username=creds['username'],
+  client = keystonec.Client(username=creds['username'],
                                   password=creds['password'],
                                   tenant_name=creds['tenant_name'],
                                   insecure=creds['insecure'],
