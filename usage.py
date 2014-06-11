@@ -22,7 +22,7 @@ def allocation_cinder_usage(creds, tenant_id):
   else:
     usage['gb_allocated'] = float(0)
 
-  usage['gb_used'] = float(0)
+  usage['gb_used'] = usage['gb_allocated']
 
   #cleanup clients
 
