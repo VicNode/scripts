@@ -14,13 +14,4 @@ def list_merit_allocations(creds):
                                   auth_url=creds['auth_url'],
                                   region_name=creds['region_name'])
 
-  all_tenants = client.tenants.list()
-
-  for tenant in all_tenants:
-
-    if hasattr(tenant, 'vicnode_id'):
-      merit_allocation_tenants.append(tenant)
-
-  #destroy client??
-
-  return merit_allocation_tenants
+  return [ tenant for tenant in client.tenants.list() if hasattr(tenant, 'vicnode_id') ]
