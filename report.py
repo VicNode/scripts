@@ -52,13 +52,20 @@ for tenant in merit_allocations:
   total_allocated_cinder += cinder_usage_info['gb_allocated']
   total_used_cinder += cinder_usage_info['gb_used']
 
-  print tenant.id + ", " + \
-        tenant.vicnode_id + ", " + \
-        str(swift_usage_info['gb_allocated']) + ", " + \
-        str(swift_usage_info['gb_used']) + ", " + \
-        str(cinder_usage_info['gb_allocated'])  + ", " + \
-        str(cinder_usage_info['gb_used'])  + ", " + \
-        str(swift_usage_info['gb_allocated'] + cinder_usage_info['gb_allocated']) + ", " + \
-        str(swift_usage_info['gb_used'] + cinder_usage_info['gb_used']) + ", "
+  print ', '.join([tenant.id,
+                   tenant.vicnode_id,
+                   str(swift_usage_info['gb_allocated']),
+                   str(round(swift_usage_info['gb_used'], 2) ),
+                   str(cinder_usage_info['gb_allocated']),
+                   str(cinder_usage_info['gb_used']),
+                   str(swift_usage_info['gb_allocated'] + cinder_usage_info['gb_allocated']),
+                   str(swift_usage_info['gb_used'] + cinder_usage_info['gb_used'])])
 
-print "total, total, " + str(total_allocated_swift) + ", " + str(total_used_swift) + ", " + str(total_allocated_cinder) + ", " + str(total_used_cinder) + ", " + str(total_allocated_swift + total_allocated_cinder) + ", " + str(total_used_swift + total_used_cinder)
+print ', '.join(['total',
+                 'total',
+                 str(total_allocated_swift),
+                 str(round(total_used_swift)),
+                 str(total_allocated_cinder),
+                 str(total_used_cinder),
+                 str(total_allocated_swift + total_allocated_cinder),
+                 str(total_used_swift + total_used_cinder)])
