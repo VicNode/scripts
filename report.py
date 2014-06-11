@@ -1,4 +1,6 @@
 #!/usr/bin/python
+import argparse
+
 from os import environ
 from re import sub as substitute
 
@@ -8,13 +10,18 @@ from cinderclient import client as cinderc
 
 def main():
   creds = {}
-  
+
+  parser = argparse.ArgumentParser(description='VicNode reporting tool')
+  parser.add_argument('-i', '--insecure', action='store_true', help='Whether to connect to endpoints using insecure SSL')
+  args = parser.parse_args()
+
+  creds['insecure'] = args.insecure
+
   creds['username'] = environ['OS_USERNAME']
   creds['password'] = environ['OS_PASSWORD']
   creds['tenant_name'] = environ['OS_TENANT_NAME']
   creds['auth_url'] = environ['OS_AUTH_URL']
   creds['region_name'] = environ['OS_SWIFT_REGION_NAME']
-  creds['insecure'] = True
     
   merit_allocations = list_merit_allocations(creds)
   
