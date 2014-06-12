@@ -25,12 +25,6 @@ def main():
     
   merit_allocations = list_merit_allocations(creds)
   
-  total_allocated_cinder = 0
-  total_used_cinder = 0
-  
-  total_allocated_swift = 0
-  total_used_swift = 0
-  
   swift = swiftc.Connection(authurl=creds['auth_url'],
                             user=creds['username'],
                             key=creds['password'],
@@ -48,13 +42,9 @@ def main():
   
     creds['region_name'] = environ['OS_SWIFT_REGION_NAME']
     swift_usage_info = allocation_swift_usage(creds, tenant.id, swift_auth_url)
-    total_allocated_swift += swift_usage_info['gb_allocated']
-    total_used_swift += swift_usage_info['gb_used']
   
     creds['region_name'] = environ['OS_CINDER_REGION_NAME']
     cinder_usage_info = allocation_cinder_usage(creds, tenant.id)
-    total_allocated_cinder += cinder_usage_info['gb_allocated']
-    total_used_cinder += cinder_usage_info['gb_used']
   
     print ', '.join([tenant.id,
                      tenant.vicnode_id,
@@ -64,15 +54,6 @@ def main():
                      str(cinder_usage_info['gb_used']),
                      str(swift_usage_info['gb_allocated'] + cinder_usage_info['gb_allocated']),
                      str(swift_usage_info['gb_used'] + cinder_usage_info['gb_used'])])
-  
-  print ', '.join(['total',
-                   'total',
-                   str(total_allocated_swift),
-                   str(round(total_used_swift)),
-                   str(total_allocated_cinder),
-                   str(total_used_cinder),
-                   str(total_allocated_swift + total_allocated_cinder),
-                   str(total_used_swift + total_used_cinder)])
 
 def list_merit_allocations(creds):
 
