@@ -3,7 +3,7 @@ TOTALSTORAGE=$((0))
 TOTALUSED=$((0))
 
 #Six servers per site
-for i in `seq 3 6`; 
+for i in `seq 1 6`; 
 do
 
     for j in `seq 1 4`;
