@@ -117,12 +117,16 @@ def list_merit_allocations(creds):
 
     merit_allocation_tenants = []
 
-    client = keystonec.Client(username=creds['username'],
+    try:
+        client = keystonec.Client(username=creds['username'],
                                   password=creds['password'],
                                   tenant_name=creds['tenant_name'],
                                   insecure=creds['insecure'],
                                   auth_url=creds['auth_url'],
                                   region_name=creds['region_name'])
+    except:
+        print('Failed to connect to Keystone')
+        sys.exit(1)
 
     return [ tenant for tenant in client.tenants.list() if hasattr(tenant, 'vicnode_id') ]
 
@@ -130,13 +134,17 @@ def allocation_cinder_usage(creds, tenant_id):
 
     usage = {}
 
-    cinder = cinderc.Client('1',
-                          creds['username'],
-                          creds['password'],
-                          project_id=creds['tenant_name'],
-                          auth_url=creds['auth_url'],
-                          insecure=creds['insecure'],
-                          region_name=creds['region_name'])
+    try:
+        cinder = cinderc.Client('1',
+                              creds['username'],
+                              creds['password'],
+                              project_id=creds['tenant_name'],
+                              auth_url=creds['auth_url'],
+                              insecure=creds['insecure'],
+                              region_name=creds['region_name'])
+    except:
+        print('Failed to connect to Cinder')
+        sys.exit(1)
 
 
     quota_info = float(cinder.quotas.get(tenant_id).gigabytes)
@@ -153,14 +161,18 @@ def allocation_swift_usage(creds, tenant_id, swift_auth_url):
 
     usage = {}
 
-    swift = swiftc.Connection(authurl=creds['auth_url'],
-                            user=creds['username'],
-                            key=creds['password'],
-                            tenant_name=creds['tenant_name'],
-                            insecure=creds['insecure'],
-                            os_options={'region_name': creds['region_name'],
-                                        'object_storage_url': swift_auth_url + tenant_id},
-                            auth_version='2.0')
+    try:
+        swift = swiftc.Connection(authurl=creds['auth_url'],
+                                user=creds['username'],
+                                key=creds['password'],
+                                tenant_name=creds['tenant_name'],
+                                insecure=creds['insecure'],
+                                os_options={'region_name': creds['region_name'],
+                                            'object_storage_url': swift_auth_url + tenant_id},
+                                auth_version='2.0')
+    except:
+        print('Failed to connect to Swift')
+        sys.exit(1)
 
     account_info = swift.head_account()
 
