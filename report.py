@@ -1,6 +1,8 @@
 #!/usr/bin/python
 import argparse
 import sys
+sys.path.append("./NetApp/lib/python/NetApp")
+from NaServer import NaServer
 
 from os import environ
 from re import sub as substitute
@@ -82,7 +84,7 @@ def report_allocation(args):
         creds['region_name'] = args.swift_region
 
     merit_allocations = list_merit_allocations(creds)
-  
+
     swift = swiftc.Connection(authurl=creds['auth_url'],
                               user=creds['username'],
                               key=creds['password'],
@@ -90,20 +92,20 @@ def report_allocation(args):
                               insecure=creds['insecure'],
                               os_options={'region_name': creds['region_name']},
                               auth_version='2.0')
-  
+
     swift.head_account()
     swift_auth_url = substitute('AUTH_.*','AUTH_', swift.url)
-  
+
     print "tenant_id, vicnode_id, swift_quota, swift_used, cinder_quota, cinder_used, total_allocation_quota, total_allocation_used"
-  
+
     for tenant in merit_allocations:
-  
+
         creds['region_name'] = environ['OS_SWIFT_REGION_NAME']
         swift_usage_info = allocation_swift_usage(creds, tenant.id, swift_auth_url)
-  
+
         creds['region_name'] = environ['OS_CINDER_REGION_NAME']
         cinder_usage_info = allocation_cinder_usage(creds, tenant.id)
-      
+
         print ', '.join([tenant.id,
                          tenant.vicnode_id,
                          str(swift_usage_info['gb_allocated']),
@@ -186,7 +188,143 @@ def allocation_swift_usage(creds, tenant_id, swift_auth_url):
     return usage
 
 def report_capacity(args):
-    pass
+    connection = initialise(args.filer, args.username, args.password)
+    report_disks(connection)
+    report_aggregates(connection)
+
+def report_usable(connection):
+    vservers = get_vservers(connection)
+
+def report_disks(connection):
+    disks = get_disks(connection)
+    raw_stats = raw_storage_stats(disks)
+    disk_types = get_disk_types(raw_stats)
+    print_raw_stats(raw_stats, disk_types)
+
+def report_aggregates(connection):
+    aggrs = get_aggrs(connection)
+    aggr_stats = get_aggr_stats(aggrs)
+    print_aggrs(aggr_stats)
+
+# Initialise filer connection and return connection object
+def initialise(filer, user, pw):
+    s = NaServer(filer, 1, 3)
+    response = s.set_style('LOGIN')
+    if(response and response.results_errno() != 0 ):
+        r = response.results_reason()
+        print ("Unable to set authentication style " + r + "\n")
+        sys.exit (2)
+
+    s.set_admin_user(user, pw)
+    response = s.set_transport_type('HTTP')
+
+    if(response and response.results_errno() != 0 ):
+        r = response.results_reason()
+        print ("Unable to set HTTP transport " + r + "\n")
+        sys.exit (2)
+
+    return s
+
+def get_aggrs(s):
+    out = s.invoke("aggr-get-iter")
+
+    if(out.results_status() == "failed"):
+        print (out.results_reason() + "\n")
+        sys.exit (2)
+
+    return out.child_get('attributes-list').children_get()
+
+def get_aggr_stats(aggrs):
+    aggr_stats = {}
+    for aggr in aggrs:
+        name = aggr.child_get_string("aggregate-name")
+        owner = aggr.child_get("aggr-ownership-attributes").child_get_string('owner-name')
+
+        available = aggr.child_get("aggr-space-attributes").child_get_string('size-available')
+        total = aggr.child_get("aggr-space-attributes").child_get_string('size-total')
+        used = aggr.child_get("aggr-space-attributes").child_get_string('size-used')
+
+        if owner not in aggr_stats:
+            aggr_stats[owner] = [{'name' : name, 'available': available, 'total': total, 'used': used}]
+        else:
+            aggr_stats[owner].append({'name' : name, 'available': available, 'total': total, 'used': used})
+    return aggr_stats
+
+def print_aggrs(aggr_stats):
+    print 'Aggregate Statistics:'
+    print ', '.join(['owner', 'name', 'available', 'used', 'total'])
+    for owner,li in aggr_stats.items():
+        for data in li:
+            print ', '.join([owner, data['name'], str(round(b_to_tb(data['available']), 2)),  str(round(b_to_tb(data['used']), 2)), str(round(b_to_tb(data['total']), 2))])
+
+# Get a list of vservers
+def get_vservers(s):
+    out = s.invoke("vserver-get-iter")
+
+    if(out.results_status() == "failed"):
+        print (out.results_reason() + "\n")
+        sys.exit (2)
+
+    attributes = out.child_get('attributes-list')
+    servers = attributes.children_get()
+
+    return [ server.child_get_string('vserver-name') for server in servers if server.child_get_string('vserver-type') == 'data' ]
+
+## Get a list of all disks in the cluster
+def get_disks(s):
+    out = s.invoke("storage-disk-get-iter")
+
+    if(out.results_status() == "failed"):
+        print (out.results_reason() + "\n")
+        sys.exit (2)
+
+    return out.child_get('attributes-list').children_get()
+
+def raw_storage_stats(disks):
+    disk_stats = {}
+
+    for disk in disks:
+        t = disk.child_get("disk-inventory-info").child_get_string('disk-type')
+        c = disk.child_get("disk-inventory-info").child_get_int('capacity-sectors')
+        c *= disk.child_get("disk-stats-info").child_get_int('bytes-per-sector')
+        owner = disk.child_get("disk-ownership-info").child_get_string('owner-node-name')
+
+        if owner not in disk_stats:
+            disk_stats[owner] = {}
+
+        if t not in disk_stats[owner]:
+            disk_stats[owner][t] = {}
+
+        if 'raw' not in disk_stats[owner][t]:
+            disk_stats[owner][t]['raw'] = c
+        else:
+            disk_stats[owner][t]['raw'] += c
+    return disk_stats
+
+def get_disk_types(disk_stats):
+    types = []
+    for owner, data in disk_stats.items():
+      for t in data:
+        if t not in types:
+            types.append(t)
+    return types
+
+def b_to_tb(b):
+    return (float(b)/1024.0/1024.0/1024.0/1024.0)
+
+def print_raw_stats(disk_stats, types):
+    print 'Disk Statistics:'
+    print 'owner, ' + '_raw, '.join(types) + '_raw'
+    for owner, data in disk_stats.items():
+        s = owner + ', '
+        for t in types:
+            if t in data:
+                s += str(round(b_to_tb(data[t]['raw']), 2)) + ', '
+            else:
+                s += '0, '
+        s = s.rstrip(' ,')
+        print s
+    print ''
 
 if __name__ == '__main__':
     main()
