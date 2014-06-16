@@ -191,15 +191,22 @@ def report_capacity(args):
     connection = initialise(args.filer, args.username, args.password)
     report_disks(connection)
     report_aggregates(connection)
+    #report_vservers(connection)
+    report_volumes(connection)
 
-def report_usable(connection):
+def report_vservers(connection):
     vservers = get_vservers(connection)
+    vserver_stats = get_vserver_stats(vservers)
 
 def report_disks(connection):
     disks = get_disks(connection)
     raw_stats = raw_storage_stats(disks)
     disk_types = get_disk_types(raw_stats)
     print_raw_stats(raw_stats, disk_types)
+
+def report_volumes(connection):
+    volumes = get_volumes(connection)
+    volume_stats = get_volume_stats(volumes)
 
 def report_aggregates(connection):
     aggrs = get_aggrs(connection)
@@ -268,7 +275,46 @@ def get_vservers(s):
     attributes = out.child_get('attributes-list')
     servers = attributes.children_get()
 
-    return [ server.child_get_string('vserver-name') for server in servers if server.child_get_string('vserver-type') == 'data' ]
+    return [ server for server in servers if server.child_get_string('vserver-type') == 'data' ]
+
+def get_vserver_stats(servers):
+    print ''
+    print 'Vserver stats:'
+    for server in servers:
+        name = server.child_get_string('vserver-name')
+        print name
+        aggrs = server.child_get('vserver-aggr-list')
+        if aggrs:
+            for aggr in aggrs.children_get():
+                print aggr
+                #print aggr.child_get_string('aggr-name')
+                #print aggr.child_get_string('aggr-availsize')
+
+
+def get_volumes(s):
+    out = s.invoke("volume-get-iter")
+
+    if(out.results_status() == "failed"):
+        print (out.results_reason() + "\n")
+        sys.exit (2)
+
+    attributes = out.child_get('attributes-list')
+    return attributes.children_get()
+
+def get_volume_stats(volumes):
+    print ''
+    print 'Volume stats:'
+    print ', '.join(['name', 'vserver', 'aggr', 'used', 'available', 'capacity'])
+    for volume in volumes:
+        name = volume.child_get('volume-id-attributes').child_get_string('name')
+        vserver = volume.child_get('volume-id-attributes').child_get_string('owning-vserver-name')
+        aggr = volume.child_get('volume-id-attributes').child_get_string('containing-aggregate-name')
+        capacity = volume.child_get('volume-space-attributes').child_get_string('size-total')
+        used = volume.child_get('volume-space-attributes').child_get_string('size-used')
+        available = volume.child_get('volume-space-attributes').child_get_string('size-available')
+        print ', '.join([name, vserver, aggr, pretty_tb(used), pretty_tb(available), pretty_tb(capacity)])
+
+
 
 ## Get a list of all disks in the cluster
 def get_disks(s):
@@ -308,6 +354,9 @@ def get_disk_types(disk_stats):
         if t not in types:
             types.append(t)
     return types
+
+def pretty_tb(b):
+    return str(round(b_to_tb(b), 2))
 
 def b_to_tb(b):
     return (float(b)/1024.0/1024.0/1024.0/1024.0)
