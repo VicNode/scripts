@@ -2,7 +2,8 @@
 TOTALSTORAGE=$((0))
 TOTALUSED=$((0))
 
-#Six servers per site
+echo "raw, usable, used"
+
 for i in `seq 1 6`; 
 do
 
