@@ -22,13 +22,14 @@ def main():
     parser_allocation.add_argument('-p', '--password', help='Openstack password to use when connecting')
     parser_allocation.add_argument('-t', '--tenant', help='Openstack tenant to use when connecting')
     parser_allocation.add_argument('-a', '--auth_url', help='Openstack endpoint url to authenticate against')
-    parser_allocation.add_argument('-s', '--swift_region', help='Name of the Swift region to reoprt on')
+    parser_allocation.add_argument('-s', '--swift_region', help='Name of the Swift region to report on')
+    parser_allocation.add_argument('-c', '--cinder_region', help='Name of the Cinder region to report on')
     parser_allocation.set_defaults(func=report_allocation)
 
     parser_capacity  = subparsers.add_parser('capacity', help='Report on current capacity')
-    parser_capacity.add_argument('-f', '--filer', help='Address or hostname of NetApp filer')
-    parser_capacity.add_argument('-u', '--username', help='Username to use when connecting to NetApp filer')
-    parser_capacity.add_argument('-p', '--password', help='Password to use when connecting to NetApp filer')
+    parser_capacity.add_argument('-f', '--filer', required=True, help='Address or hostname of NetApp filer')
+    parser_capacity.add_argument('-u', '--username', required=True, help='Username to use when connecting to NetApp filer')
+    parser_capacity.add_argument('-p', '--password', required=True, help='Password to use when connecting to NetApp filer')
     parser_capacity.set_defaults(func=report_capacity)
 
     args = parser.parse_args()
@@ -79,9 +80,18 @@ def report_allocation(args):
             print 'OpenStack swift region name environment variable OS_SWIFT_REGION_NAME not set and -s not used'
             sys.exit(1)
         else:
-            creds['region_name'] = environ['OS_SWIFT_REGION_NAME']
+            creds['swift_region_name'] = environ['OS_SWIFT_REGION_NAME']
     else:
-        creds['region_name'] = args.swift_region
+        creds['swift_region_name'] = args.swift_region
+
+    if args.cinder_region == None:
+        if 'OS_CINDER_REGION_NAME' not in environ:
+            print 'OpenStack cinder region name environment variable OS_CINDER_REGION_NAME not set and -s not used'
+            sys.exit(1)
+        else:
+            creds['cinder_region_name'] = environ['OS_CINDER_REGION_NAME']
+    else:
+        creds['cinder_region_name'] = args.cinder_region
 
     merit_allocations = list_merit_allocations(creds)
 
@@ -90,7 +100,7 @@ def report_allocation(args):
                               key=creds['password'],
                               tenant_name=creds['tenant_name'],
                               insecure=creds['insecure'],
-                              os_options={'region_name': creds['region_name']},
+                              os_options={'region_name': creds['swift_region_name']},
                               auth_version='2.0')
 
     swift.head_account()
@@ -100,10 +110,10 @@ def report_allocation(args):
 
     for tenant in merit_allocations:
 
-        creds['region_name'] = environ['OS_SWIFT_REGION_NAME']
+        #creds['region_name'] = environ['OS_SWIFT_REGION_NAME']
         swift_usage_info = allocation_swift_usage(creds, tenant.id, swift_auth_url)
 
-        creds['region_name'] = environ['OS_CINDER_REGION_NAME']
+        #creds['region_name'] = environ['OS_CINDER_REGION_NAME']
         cinder_usage_info = allocation_cinder_usage(creds, tenant.id)
 
         print ', '.join([tenant.id,
@@ -125,7 +135,7 @@ def list_merit_allocations(creds):
                                   tenant_name=creds['tenant_name'],
                                   insecure=creds['insecure'],
                                   auth_url=creds['auth_url'],
-                                  region_name=creds['region_name'])
+                                  region_name=creds['cinder_region_name'])
     except:
         print('Failed to connect to Keystone')
         sys.exit(1)
@@ -143,7 +153,7 @@ def allocation_cinder_usage(creds, tenant_id):
                               project_id=creds['tenant_name'],
                               auth_url=creds['auth_url'],
                               insecure=creds['insecure'],
-                              region_name=creds['region_name'])
+                              region_name=creds['cinder_region_name'])
     except:
         print('Failed to connect to Cinder')
         sys.exit(1)
@@ -169,7 +179,7 @@ def allocation_swift_usage(creds, tenant_id, swift_auth_url):
                                 key=creds['password'],
                                 tenant_name=creds['tenant_name'],
                                 insecure=creds['insecure'],
-                                os_options={'region_name': creds['region_name'],
+                                os_options={'region_name': creds['swift_region_name'],
                                             'object_storage_url': swift_auth_url + tenant_id},
                                 auth_version='2.0')
     except:
@@ -259,10 +269,10 @@ def get_aggr_stats(aggrs):
 
 def print_aggrs(aggr_stats):
     print 'Aggregate Statistics:'
-    print ', '.join(['owner', 'name', 'available', 'used', 'total'])
+    print ', '.join(['owner', 'name', 'total', 'used', 'available'])
     for owner,li in aggr_stats.items():
         for data in li:
-            print ', '.join([owner, data['name'], str(round(b_to_tb(data['available']), 2)),  str(round(b_to_tb(data['used']), 2)), str(round(b_to_tb(data['total']), 2))])
+            print ', '.join([owner, data['name'], pretty_tb(data['total']),  pretty_tb(data['used']), pretty_tb(data['available'])])
 
 # Get a list of vservers
 def get_vservers(s):
@@ -304,15 +314,15 @@ def get_volumes(s):
 def get_volume_stats(volumes):
     print ''
     print 'Volume stats:'
-    print ', '.join(['name', 'vserver', 'aggr', 'used', 'available', 'capacity'])
+    print ', '.join(['name', 'vserver', 'aggr', 'total', 'used', 'available'])
     for volume in volumes:
         name = volume.child_get('volume-id-attributes').child_get_string('name')
         vserver = volume.child_get('volume-id-attributes').child_get_string('owning-vserver-name')
         aggr = volume.child_get('volume-id-attributes').child_get_string('containing-aggregate-name')
-        capacity = volume.child_get('volume-space-attributes').child_get_string('size-total')
+        total = volume.child_get('volume-space-attributes').child_get_string('size-total')
         used = volume.child_get('volume-space-attributes').child_get_string('size-used')
         available = volume.child_get('volume-space-attributes').child_get_string('size-available')
-        print ', '.join([name, vserver, aggr, pretty_tb(used), pretty_tb(available), pretty_tb(capacity)])
+        print ', '.join([name, vserver, aggr, pretty_tb(total), pretty_tb(used), pretty_tb(available)])
 
 
 
