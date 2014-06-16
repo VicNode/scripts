@@ -1,4 +1,9 @@
 #!/usr/bin/python
+# Copyright (C) 2014 Aptira <info@aptira.com>
+#
+# Author: Michael Chapman   <michael@aptira.com>
+# Author: Sina Sadeghi      <sina@aptira.com>
+#
 import argparse
 import sys
 sys.path.append("./NetApp/lib/python/NetApp")
