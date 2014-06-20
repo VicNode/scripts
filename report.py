@@ -37,6 +37,12 @@ def main():
     parser_capacity.add_argument('-p', '--password', required=True, help='Password to use when connecting to NetApp filer')
     parser_capacity.set_defaults(func=report_capacity)
 
+    parser_market  = subparsers.add_parser('market', help='Report on Market ')
+    parser_market.add_argument('-f', '--filer', required=True, help='Address or hostname of NetApp filer')
+    parser_market.add_argument('-u', '--username', required=True, help='Username to use when connecting to NetApp filer')
+    parser_market.add_argument('-p', '--password', required=True, help='Password to use when connecting to NetApp filer')
+    parser_market.set_defaults(func=report_market)
+
     args = parser.parse_args()
     args.func(args)
 
@@ -206,12 +212,7 @@ def report_capacity(args):
     connection = initialise(args.filer, args.username, args.password)
     report_disks(connection)
     report_aggregates(connection)
-    #report_vservers(connection)
     report_volumes(connection)
-
-def report_vservers(connection):
-    vservers = get_vservers(connection)
-    vserver_stats = get_vserver_stats(vservers)
 
 def report_disks(connection):
     disks = get_disks(connection)
@@ -227,6 +228,13 @@ def report_aggregates(connection):
     aggrs = get_aggrs(connection)
     aggr_stats = get_aggr_stats(aggrs)
     print_aggrs(aggr_stats)
+
+# The market has one vserver perAuser
+def report_market(args):
+    connection = initialise(args.filer, args.username, args.password)
+    vservers = get_vservers(connection)
+    volumes = get_volumes(connection)
+    vserver_stats = get_vserver_stats(vservers, volumes)
 
 # Initialise filer connection and return connection object
 def initialise(filer, user, pw):
@@ -279,7 +287,7 @@ def print_aggrs(aggr_stats):
         for data in li:
             print ', '.join([owner, data['name'], pretty_tb(data['total']),  pretty_tb(data['used']), pretty_tb(data['available'])])
 
-# Get a list of vservers
+# Get a list of non-admin vservers
 def get_vservers(s):
     out = s.invoke("vserver-get-iter")
 
@@ -292,19 +300,28 @@ def get_vservers(s):
 
     return [ server for server in servers if server.child_get_string('vserver-type') == 'data' ]
 
-def get_vserver_stats(servers):
-    print ''
-    print 'Vserver stats:'
-    for server in servers:
-        name = server.child_get_string('vserver-name')
-        print name
-        aggrs = server.child_get('vserver-aggr-list')
-        if aggrs:
-            for aggr in aggrs.children_get():
-                print aggr
-                #print aggr.child_get_string('aggr-name')
-                #print aggr.child_get_string('aggr-availsize')
+def get_vserver_stats(servers, volumes):
+    print 'Market VServer Stats:'
+    stats = {}
+    serverids = { server.child_get_string('uuid'): server.child_get_string('vserver-name') for server in servers }
+    for volume in volumes:
+        vserver = volume.child_get('volume-id-attributes').child_get_string('owning-vserver-name')
+        vserver_uuid = volume.child_get('volume-id-attributes').child_get_string('owning-vserver-uuid')
+        total = volume.child_get('volume-space-attributes').child_get_int('size-total')
+        used = volume.child_get('volume-space-attributes').child_get_int('size-used')
+        available = volume.child_get('volume-space-attributes').child_get_int('size-available')
+        if vserver_uuid in serverids:
+            if vserver_uuid not in stats:
+                stats[vserver_uuid] = { 'volume_count': 1, 'total': total, 'used': used, 'available': available }
+            else:
+                stats[vserver_uuid]['total'] += total
+                stats[vserver_uuid]['used'] += used
+                stats[vserver_uuid]['available'] += available
+                stats[vserver_uuid]['volume_count'] += 1
 
+    print ', '.join(['vserver_name', 'total','used','available','volume_count'])
+    for vserver_uuid, data in stats.items():
+        print ', '.join([serverids[vserver_uuid], pretty_tb(data['total']), pretty_tb(data['used']), pretty_tb(data['available']), str(data['volume_count'])])
 
 def get_volumes(s):
     out = s.invoke("volume-get-iter")
