@@ -324,7 +324,9 @@ def get_vserver_stats(servers, volumes):
         print ', '.join([serverids[vserver_uuid], pretty_tb(data['total']), pretty_tb(data['used']), pretty_tb(data['available']), str(data['volume_count'])])
 
 def get_volumes(s):
-    out = s.invoke("volume-get-iter")
+    cmd = NaElement('volume-get-iter')
+    cmd.child_add_string('max-records', 500)
+    out = s.invoke_elem(cmd)
 
     if(out.results_status() == "failed"):
         print (out.results_reason() + "\n")
@@ -338,13 +340,14 @@ def get_volume_stats(volumes):
     print 'Volume stats:'
     print ', '.join(['name', 'vserver', 'aggr', 'total', 'used', 'available'])
     for volume in volumes:
-        name = volume.child_get('volume-id-attributes').child_get_string('name')
-        vserver = volume.child_get('volume-id-attributes').child_get_string('owning-vserver-name')
-        aggr = volume.child_get('volume-id-attributes').child_get_string('containing-aggregate-name')
-        total = volume.child_get('volume-space-attributes').child_get_string('size-total')
-        used = volume.child_get('volume-space-attributes').child_get_string('size-used')
-        available = volume.child_get('volume-space-attributes').child_get_string('size-available')
-        print ', '.join([name, vserver, aggr, pretty_tb(total), pretty_tb(used), pretty_tb(available)])
+        if re.search(r'root', volume.child_get('volume-id-attributes').child_get_string('name')) is None:
+            name = volume.child_get('volume-id-attributes').child_get_string('name')
+            vserver = volume.child_get('volume-id-attributes').child_get_string('owning-vserver-name')
+            aggr = volume.child_get('volume-id-attributes').child_get_string('containing-aggregate-name')
+            total = volume.child_get('volume-space-attributes').child_get_string('size-total')
+            used = volume.child_get('volume-space-attributes').child_get_string('size-used')
+            available = volume.child_get('volume-space-attributes').child_get_string('size-available')
+            print ', '.join([name, vserver, aggr, pretty_tb(total), pretty_tb(used), pretty_tb(available)])
 
 
 
