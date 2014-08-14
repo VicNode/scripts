@@ -8,9 +8,10 @@ import argparse
 import sys
 sys.path.append("./NetApp/lib/python/NetApp")
 from NaServer import NaServer
+from NaElement import NaElement
 
 from os import environ
-from re import sub as substitute
+import re
 
 from keystoneclient.v2_0 import client as keystonec
 from swiftclient import client as swiftc
@@ -97,7 +98,7 @@ def report_allocation(args):
 
     if args.cinder_region == None:
         if 'OS_CINDER_REGION_NAME' not in environ:
-            print 'OpenStack cinder region name environment variable OS_CINDER_REGION_NAME not set and -s not used'
+            print 'OpenStack cinder region name environment variable OS_CINDER_REGION_NAME not set and -c not used'
             sys.exit(1)
         else:
             creds['cinder_region_name'] = environ['OS_CINDER_REGION_NAME']
@@ -115,7 +116,7 @@ def report_allocation(args):
                               auth_version='2.0')
 
     swift.head_account()
-    swift_auth_url = substitute('AUTH_.*','AUTH_', swift.url)
+    swift_auth_url = re.sub('AUTH_.*','AUTH_', swift.url)
 
     print "tenant_id, vicnode_id, swift_quota, swift_used, cinder_quota, cinder_used, total_allocation_quota, total_allocation_used"
 
