@@ -306,19 +306,23 @@ def get_vserver_stats(servers, volumes):
     stats = {}
     serverids = { server.child_get_string('uuid'): server.child_get_string('vserver-name') for server in servers }
     for volume in volumes:
-        vserver = volume.child_get('volume-id-attributes').child_get_string('owning-vserver-name')
-        vserver_uuid = volume.child_get('volume-id-attributes').child_get_string('owning-vserver-uuid')
-        total = volume.child_get('volume-space-attributes').child_get_int('size-total')
-        used = volume.child_get('volume-space-attributes').child_get_int('size-used')
-        available = volume.child_get('volume-space-attributes').child_get_int('size-available')
-        if vserver_uuid in serverids:
-            if vserver_uuid not in stats:
-                stats[vserver_uuid] = { 'volume_count': 1, 'total': total, 'used': used, 'available': available }
-            else:
-                stats[vserver_uuid]['total'] += total
-                stats[vserver_uuid]['used'] += used
-                stats[vserver_uuid]['available'] += available
-                stats[vserver_uuid]['volume_count'] += 1
+        vol_id_attrs = volume.child_get('volume-id-attributes')
+        vol_space_attrs = volume.child_get('volume-space-attributes')
+        vserver = vol_id_attrs.child_get_string('owning-vserver-name')
+
+        if vserver.startswith('os_'):
+            vserver_uuid = vol_id_attrs.child_get_string('owning-vserver-uuid')
+            total = vol_space_attrs.child_get_int('size-total')
+            used = vol_space_attrs.child_get_int('size-used')
+            available = vol_space_attrs.child_get_int('size-available')
+            if vserver_uuid in serverids:
+                if vserver_uuid not in stats:
+                    stats[vserver_uuid] = { 'volume_count': 1, 'total': total, 'used': used, 'available': available }
+                else:
+                    stats[vserver_uuid]['total'] += total
+                    stats[vserver_uuid]['used'] += used
+                    stats[vserver_uuid]['available'] += available
+                    stats[vserver_uuid]['volume_count'] += 1
 
     print ', '.join(['vserver_name', 'total','used','available','volume_count'])
     for vserver_uuid, data in stats.items():
@@ -341,15 +345,17 @@ def get_volume_stats(volumes):
     print 'Volume stats:'
     print ', '.join(['name', 'vserver', 'aggr', 'total', 'used', 'available'])
     for volume in volumes:
-        if re.search(r'root', volume.child_get('volume-id-attributes').child_get_string('name')) is None:
-            name = volume.child_get('volume-id-attributes').child_get_string('name')
-            vserver = volume.child_get('volume-id-attributes').child_get_string('owning-vserver-name')
-            aggr = volume.child_get('volume-id-attributes').child_get_string('containing-aggregate-name')
-            total = volume.child_get('volume-space-attributes').child_get_string('size-total')
-            used = volume.child_get('volume-space-attributes').child_get_string('size-used')
-            available = volume.child_get('volume-space-attributes').child_get_string('size-available')
-            print ', '.join([name, vserver, aggr, pretty_tb(total), pretty_tb(used), pretty_tb(available)])
+        vol_id_attrs = volume.child_get('volume-id-attributes')
+        vol_space_attrs = volume.child_get('volume-space-attributes')
+        vserver = vol_id_attrs.child_get_string('owning-vserver-name')
+        name = vol_id_attrs.child_get_string('name')
 
+        if vserver.startswith('os_') and name.find('rootvol') != 0:
+              aggr = vol_id_attrs.child_get_string('containing-aggregate-name')
+              total = vol_space_attrs.child_get_string('size-total')
+              used = vol_space_attrs.child_get_string('size-used')
+              available = vol_space_attrs.child_get_string('size-available')
+              print ', '.join([name, vserver, aggr, pretty_tb(total), pretty_tb(used), pretty_tb(available)])
 
 
 ## Get a list of all disks in the cluster
