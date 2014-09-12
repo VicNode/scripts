@@ -1,0 +1,8 @@
+{%- for host, services in data.iteritems() %}
+  {%- for service in services %}
+  host: {{ host }}
+  service: {{ service['name'] }}
+         ok    warning   critical    unknown
+   {{ service['ok'] }}   {{ service['warning'] }}   {{ service['critical'] }}   {{ service['unknown'] }}
+  {% endfor %}
+{%- endfor %}
