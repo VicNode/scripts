@@ -7,7 +7,7 @@
 
 import argparse
 import sys
-sys.path.append("./NetApp/lib/python/NetApp")
+sys.path.append('./NetApp/lib/python/NetApp')
 from NaServer import NaServer
 from NaElement import NaElement
 
@@ -115,7 +115,7 @@ def report_allocation(args):
     swift.head_account()
     swift_auth_url = re.sub('AUTH_.*', 'AUTH_', swift.url)
 
-    print "tenant_id, vicnode_id, swift_quota, swift_used, cinder_quota, cinder_used, total_allocation_quota, total_allocation_used"
+    print 'tenant_id, vicnode_id, swift_quota, swift_used, cinder_quota, cinder_used, total_allocation_quota, total_allocation_used'
 
     for tenant in merit_allocations:
 
@@ -242,31 +242,32 @@ def report_vservers(vservers, volumes):
     print_vserver_stats(vserver_stats)
 
 
-# Initialise NetApp cluster connection and return connection object
-def connect(filer, user, pw):
-    conn = NaServer(filer, 1, 3)
+def connect(cluster, user, pw):
+    """ Initialise NetApp cluster connection and return connection object """
+
+    conn = NaServer(cluster, 1, 3)
     response = conn.set_style('LOGIN')
     if (response and response.results_errno() != 0):
-        r = response.results_reason()
-        print ("Unable to set authentication style " + r + "\n")
+        resp = response.results_reason()
+        print ('Unable to set authentication style %s' % resp)
         sys.exit(2)
 
     conn.set_admin_user(user, pw)
     response = conn.set_transport_type('HTTP')
-
     if (response and response.results_errno() != 0):
-        r = response.results_reason()
-        print ("Unable to set HTTP transport " + r + "\n")
+        resp = response.results_reason()
+        print ('Unable to set HTTP transport %s' % resp)
         sys.exit(2)
 
     return conn
 
 
-def get_aggrs(s):
-    out = s.invoke("aggr-get-iter")
+def get_aggrs(conn):
+    """ Return a list of all aggregates in the cluster """
+    out = conn.invoke('aggr-get-iter')
 
-    if(out.results_status() == "failed"):
-        print (out.results_reason() + "\n")
+    if(out.results_status() == 'failed'):
+        print (out.results_reason() + '\n')
         sys.exit(2)
 
     return out.child_get('attributes-list').children_get()
@@ -276,36 +277,43 @@ def get_aggr_stats(aggrs):
     stats = {}
 
     for aggr in aggrs:
-        name = aggr.child_get_string("aggregate-name")
-        owner = aggr.child_get("aggr-ownership-attributes").child_get_string('owner-name')
+        name = aggr.child_get_string('aggregate-name')
+        ownership_attrs = aggr.child_get('aggr-ownership-attributes')
+        owner = ownership_attrs.child_get_string('owner-name')
 
-        aggr_space_attrs = aggr.child_get("aggr-space-attributes")
+        aggr_space_attrs = aggr.child_get('aggr-space-attributes')
         available = aggr_space_attrs.child_get_string('size-available')
         total = aggr_space_attrs.child_get_string('size-total')
         used = aggr_space_attrs.child_get_string('size-used')
 
         if owner not in stats:
-            stats[owner] = [{'name': name, 'available': available, 'total': total, 'used': used}]
+            stats[owner] = [{'name': name, 'available': available,
+                             'total': total, 'used': used}]
         else:
-            stats[owner].append({'name': name, 'available': available, 'total': total, 'used': used})
+            stats[owner].append({'name': name, 'available': available,
+                                 'total': total, 'used': used})
     return stats
 
 
 def print_aggr_stats(aggr_stats):
     print 'Aggregate Statistics:'
     print ', '.join(['controller', 'aggregate', 'total', 'used', 'available'])
-    for owner, li in aggr_stats.items():
-        for data in li:
-            print ', '.join([owner, data['name'], pretty_tb(data['total']), pretty_tb(data['used']), pretty_tb(data['available'])])
+    for owner, data in aggr_stats.items():
+        for item in data:
+            name = item['name']
+            total = pretty_tb(item['total'])
+            used = pretty_tb(item['used'])
+            available = pretty_tb(item['available'])
+            print ', '.join([owner, name, total, used, available])
     print
 
 
-# Get a list of non-admin vservers
-def get_vservers(s):
-    out = s.invoke("vserver-get-iter")
+def get_vservers(conn):
+    """ Return a list of all data vservers in the cluster """
+    out = conn.invoke('vserver-get-iter')
 
-    if(out.results_status() == "failed"):
-        print (out.results_reason() + "\n")
+    if(out.results_status() == 'failed'):
+        print (out.results_reason() + '\n')
         sys.exit(2)
 
     attributes = out.child_get('attributes-list')
@@ -328,7 +336,8 @@ def get_vserver_stats(servers, volumes):
             used = vol_space_attrs.child_get_int('size-used')
             available = vol_space_attrs.child_get_int('size-available')
             if vserver not in stats:
-                stats[vserver] = {'volume_count': 1, 'total': total, 'used': used, 'available': available}
+                stats[vserver] = {'volume_count': 1, 'total': total,
+                                  'used': used, 'available': available}
             else:
                 stats[vserver]['total'] += total
                 stats[vserver]['used'] += used
@@ -339,20 +348,24 @@ def get_vserver_stats(servers, volumes):
 
 
 def print_vserver_stats(vserver_stats):
-    print 'VServer Stats:'
-    print ', '.join(['vserver_name', 'total', 'used', 'available', 'volume_count'])
+    print 'VServer Statistics:'
+    print ', '.join(['vserver', 'total', 'used', 'available', 'volume_count'])
     for vserver, data in vserver_stats.items():
-        print ', '.join([vserver, pretty_tb(data['total']), pretty_tb(data['used']), pretty_tb(data['available']), str(data['volume_count'])])
+        total = pretty_tb(data['total'])
+        used = pretty_tb(data['used'])
+        available = pretty_tb(data['available'])
+        vol_count = str(data['volume_count'])
+        print ', '.join([vserver, total, used, available, vol_count])
     print
 
 
-def get_volumes(s):
+def get_volumes(conn):
     cmd = NaElement('volume-get-iter')
     cmd.child_add_string('max-records', 500)
-    out = s.invoke_elem(cmd)
+    out = conn.invoke_elem(cmd)
 
-    if(out.results_status() == "failed"):
-        print (out.results_reason() + "\n")
+    if(out.results_status() == 'failed'):
+        print (out.results_reason() + '\n')
         sys.exit(2)
 
     attributes = out.child_get('attributes-list')
@@ -374,16 +387,17 @@ def print_volume_stats(volumes):
             total = vol_space_attrs.child_get_string('size-total')
             used = vol_space_attrs.child_get_string('size-used')
             available = vol_space_attrs.child_get_string('size-available')
-            print ', '.join([name, vserver, aggr, pretty_tb(total), pretty_tb(used), pretty_tb(available)])
+            print ', '.join([name, vserver, aggr, pretty_tb(total),
+                             pretty_tb(used), pretty_tb(available)])
     print
 
 
-# Get a list of all disks in the cluster
-def get_disks(s):
-    out = s.invoke("storage-disk-get-iter")
+def get_disks(conn):
+    """ Return a list of all disks in the cluster """
+    out = conn.invoke('storage-disk-get-iter')
 
-    if(out.results_status() == "failed"):
-        print (out.results_reason() + "\n")
+    if(out.results_status() == 'failed'):
+        print (out.results_reason() + '\n')
         sys.exit(2)
 
     return out.child_get('attributes-list').children_get()
@@ -393,12 +407,14 @@ def get_disk_stats(disks):
     stats = {}
 
     for disk in disks:
-        disk_inventory = disk.child_get("disk-inventory-info")
+        disk_inventory = disk.child_get('disk-inventory-info')
+        disk_stats = disk.child_get('disk-stats-info')
+        disk_ownership = disk.child_get('disk-ownership-info')
         disk_type = disk_inventory.child_get_string('disk-type')
         sectors = disk_inventory.child_get_int('capacity-sectors')
-        bytes_per_sector = disk.child_get("disk-stats-info").child_get_int('bytes-per-sector')
+        bytes_per_sector = disk_stats.child_get_int('bytes-per-sector')
         capacity = sectors * bytes_per_sector
-        owner = disk.child_get("disk-ownership-info").child_get_string('owner-node-name')
+        owner = disk_ownership.child_get_string('owner-node-name')
 
         if owner not in stats:
             stats[owner] = {}
@@ -415,6 +431,7 @@ def get_disk_stats(disks):
 
 
 def get_disk_types(disk_stats):
+    """ Return a list of all disks from the disk_stats """
     disk_types = []
 
     for owner, data in disk_stats.items():
@@ -438,14 +455,14 @@ def print_disk_stats(disk_stats, disk_types):
     print 'controller, ' + ', '.join(disk_types)
 
     for owner, data in disk_stats.items():
-        s = owner + ', '
+        output = owner
         for disk_type in disk_types:
+            output += ', '
             if disk_type in data:
-                s += pretty_tb(data[disk_type]['capacity']) + ', '
+                output += pretty_tb(data[disk_type]['capacity'])
             else:
-                s += '0, '
-        s = s.rstrip(' ,')
-        print s
+                output += '0'
+        print output
     print
 
 
