@@ -297,7 +297,7 @@ def get_aggr_stats(aggrs):
 
 def print_aggr_stats(aggr_stats):
     print 'Aggregate Statistics:'
-    print ', '.join(['controller', 'aggregate', 'total', 'used', 'available'])
+    print ', '.join(['controller', 'aggregate', 'total', 'used', 'free'])
     for owner, data in aggr_stats.items():
         for item in data:
             name = item['name']
@@ -349,7 +349,7 @@ def get_vserver_stats(servers, volumes):
 
 def print_vserver_stats(vserver_stats):
     print 'VServer Statistics:'
-    print ', '.join(['vserver', 'total', 'used', 'available', 'volume_count'])
+    print ', '.join(['vserver', 'total', 'used', 'free', 'volume_count'])
     for vserver, data in vserver_stats.items():
         total = pretty_tb(data['total'])
         used = pretty_tb(data['used'])
@@ -375,7 +375,7 @@ def get_volumes(conn):
 
 def print_volume_stats(volumes):
     print 'Volume Statistics:'
-    print ', '.join(['name', 'vserver', 'aggr', 'total', 'used', 'available'])
+    print ', '.join(['name', 'vserver', 'aggr', 'total', 'used', 'free'])
     for volume in volumes:
         vol_id_attrs = volume.child_get('volume-id-attributes')
         vol_space_attrs = volume.child_get('volume-space-attributes')
