@@ -1,76 +1,55 @@
-# Installation
+#### VicNode Reporting Utilites ####
 
-The NetApp python sdk must be installed in the same directory as report.py.
 
-There are no other third party library dependencies
+### Installation ###
+The NetApp python sdk must be installed or symlinked in the same directory as
+usage-report.py.
 
-########################### ReDS Merit Allocations ###########################
-To aggregate reporting information about ReDS Merit Allocations the user should run:
 
-./report.py allocation 
+### ReDS Merit Allocations (Compute) ###
+To generate a report pertaining to the ReDS Merit Allocations, run:
 
-after sourcing their OpenStack environment creds (an example reportingrc file is provided). 
-NOTE: Slight changes have been made to the use of environment creds, and there are named
-variables for each services individual region, i.e.
+./usage-report.py allocation
+
+Make sure the OpenStack environment variables are set. An example reportingrc
+file is provided). NOTE: Slight changes have been made to the use of
+environment variables, and there are named variables for each services
+individual region, i.e.
 
 OS_SWIFT_REGION_NAME
 OS_CINDER_REGION_NAME
 
-Use
-
-./report.py allocation -h
-
-to bring up the help menu for this reporting information
+Use ./usage-report.py allocation -h to show all available options for this
+report.
 
 
-usage: report.py allocation [-h] [-i] [-u USERNAME] [-p PASSWORD] [-t TENANT]
-                            [-a AUTH_URL] [-s SWIFT_REGION] [-c CINDER_REGION]
+### Market Storage Capacity Reporting ###
+To generate a report pertaining to the market storage component, run
 
-optional arguments:
-  -h, --help            show this help message and exit
-  -i, --insecure        Whether to connect to endpoints using insecure SSL
-  -u USERNAME, --username USERNAME
-                        Openstack username to use when connecting
-  -p PASSWORD, --password PASSWORD
-                        Openstack password to use when connecting
-  -t TENANT, --tenant TENANT
-                        Openstack tenant to use when connecting
-  -a AUTH_URL, --auth_url AUTH_URL
-                        Openstack endpoint url to authenticate against
-  -s SWIFT_REGION, --swift_region SWIFT_REGION
-                        Name of the Swift region to report on
-  -c CINDER_REGION, --cinder_region CINDER_REGION
-                        Name of the Cinder region to report on
+./usage-report.py netapp
 
-########################### Computational Storage Capacity Reporting ###########################
-To aggregate reporting information about the computational storage component and its capacity
-the user should run:
+and provide the necessary credentials as command line arguments.
 
-./report.py capacity
-
-and provide the necessary credentials as command line arguments. To see the full list of 
-arguments the user can call
-
-./report.py capacity -h
+Use ./usage-report.py netapp -h to show all available options for this report.
 
 
-usage: report.py capacity [-h] -f FILER -u USERNAME -p PASSWORD
+### Vault Storage Capacity Reporting ###
+To generate a report pertaining to the archival storage component and its
+capacity run the script
 
-optional arguments:
-  -h, --help            show this help message and exit
-  -f FILER, --filer FILER
-                        Address or hostname of NetApp filer
-  -u USERNAME, --username USERNAME
-                        Username to use when connecting to NetApp filer
-  -p PASSWORD, --password PASSWORD
-                        Password to use when connecting to NetApp filer
+./vault-capacity-report.sh -d 4 -n host1 host2 host3
+
+The user must have SSH key access to each of the storage servers as root and
+all the servers are expected to be online at the time the script is run.
 
 
-########################### Archival Storage Capacity Reporting ###########################
-To aggregate reporting information about the archival storage component and its capacity run
-the script
+### Availability Report ###
+To generate a report pertaining to the availability of the NetApp storage
+system, run
 
-./diskusage.sh
+./availability-report.py
 
-The user must have SSH key access to each of the storage servers as root and all the servers
-are expected to be online at the time the script is run.
+and provide the nagios URL and hosts/services to return availability
+information for.
+
+usage: availability-report.py [-h] [-u NAGIOS_URL] [-n HOSTS]

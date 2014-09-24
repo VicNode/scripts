@@ -1,0 +1,5 @@
+cssselect
+requests
+lxml
+jinja2
+pprint

@@ -21,7 +21,7 @@ from cinderclient import client as cinderc
 
 def main():
 
-    parser = argparse.ArgumentParser(description='VicNode reporting tool')
+    parser = argparse.ArgumentParser(description='VicNode Usage Reporting Tool')
     subparsers = parser.add_subparsers()
 
     parser_allocation = subparsers.add_parser('allocation', help='Report on current allocations')
