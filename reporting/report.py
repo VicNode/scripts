@@ -198,11 +198,11 @@ def allocation_swift_usage(creds, tenant_id, swift_auth_url):
     account_info = swift.head_account()
 
     if 'x-account-meta-account-bytes' in account_info:
-        usage['gb_allocated'] = float(account_info['x-account-meta-account-bytes']) / 1000 / 1000 / 1000
+        usage['gb_allocated'] = float(account_info['x-account-meta-account-bytes']) / 1024 / 1024 / 1024
     else:
         usage['gb_allocated'] = float(0)
 
-    usage['gb_used'] = float(account_info['x-account-bytes-used']) / 1000 / 1000 / 1000
+    usage['gb_used'] = float(account_info['x-account-bytes-used']) / 1024 / 1024 / 1024
 
     return usage
 
@@ -447,7 +447,7 @@ def pretty_tb(b):
 
 
 def b_to_tb(b):
-    return (float(b) / 1000.0 / 1000.0 / 1000.0 / 1000.0)
+    return (float(b) / 1024.0 / 1024.0 / 1024.0 / 1024.0)
 
 
 def print_disk_stats(disk_stats, disk_types):
