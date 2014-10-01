@@ -1,215 +1,128 @@
 #!/usr/bin/python
-# Copyright (C) 2014 Aptira <info@aptira.com>
+#
+# Copyright (c) 2014 Aptira <info@aptira.com>
+# Copyright (c) 2014 University of Melbourne
 #
 # Author: Michael Chapman   <michael@aptira.com>
 # Author: Sina Sadeghi      <sina@aptira.com>
+# Author: Marcus Furlong    <furlongm@gmail.com>
 
-
-import argparse
+import os
 import sys
+import argparse
+
 sys.path.append('./NetApp/lib/python/NetApp')
 from NaServer import NaServer
 from NaElement import NaElement
 
-import os
-import re
-
 from keystoneclient.v2_0 import client as ks_client
-from keystoneclient.exceptions import AuthorizationFailure
-from swiftclient import client as swiftc
-from cinderclient import client as cinderc
+from keystoneclient.exceptions import AuthorizationFailure, NotFound
+from swiftclient.exceptions import ClientException
+from swiftclient import client as swiftclient
+from cinderclient import client as cinderclient
+
+SWIFT_QUOTA_KEY = 'X-Account-Meta-Quota-Bytes'.lower()
 
 
 def main():
-
-    parser = argparse.ArgumentParser(description='VicNode Usage Reporting Tool')
-    subparsers = parser.add_subparsers()
-
-    parser_allocation = subparsers.add_parser('allocation', help='Report on current allocations')
-    parser_allocation.add_argument('-i', '--insecure', action='store_true', help='Whether to connect to endpoints using insecure SSL')
-    parser_allocation.add_argument('-u', '--username', help='Openstack username to use when connecting')
-    parser_allocation.add_argument('-p', '--password', help='Openstack password to use when connecting')
-    parser_allocation.add_argument('-t', '--tenant', help='Openstack tenant to use when connecting')
-    parser_allocation.add_argument('-a', '--auth_url', help='Openstack endpoint url to authenticate against')
-    parser_allocation.add_argument('-s', '--swift_region', help='Name of the Swift region to report on')
-    parser_allocation.add_argument('-c', '--cinder_region', help='Name of the Cinder region to report on')
-    parser_allocation.set_defaults(func=report_allocation)
-
-    parser_netapp = subparsers.add_parser('netapp', help='Netapp Statistics Reporting')
-    parser_netapp.add_argument('-c', '--cluster', required=True, help='Netapp cluster address or hostname')
-    parser_netapp.add_argument('-u', '--username', required=True, help='NetApp cluster username')
-    parser_netapp.add_argument('-p', '--password', required=True, help='Netapp cluster password')
-    parser_netapp.set_defaults(func=report_netapp)
+    parser = argparse.ArgumentParser(description='VicNode Usage Report Tool')
+    parser.add_argument('-c', '--clusters', required=True, nargs='+',
+                        help='Netapp cluster IP addresses or hostnames')
+    parser.add_argument('-u', '--username', required=True,
+                        help='NetApp cluster username')
+    parser.add_argument('-p', '--password', required=True,
+                        help='Netapp cluster password')
 
     args = parser.parse_args()
-    args.func(args)
+    tenants = get_vicnode_tenants()
+    get_netapp_stats(tenants, args)
+    get_openstack_stats(tenants)
 
 
-def report_allocation(args):
-    creds = {}
-    creds['insecure'] = args.insecure
+def get_netapp_stats(tenants, args):
+    for cluster in args.clusters:
+        conn = netapp_connect(cluster, args.username, args.password)
 
-    if args.username is None:
-        if 'OS_USERNAME' not in os.environ:
-            print 'OpenStack username environment variable OS_USERNAME not set and -u not used'
-            sys.exit(1)
-        else:
-            creds['username'] = os.environ['OS_USERNAME']
-    else:
-        creds['username'] = args.username
+        disks = get_disks(conn)
+        aggrs = get_aggrs(conn)
+        volumes = get_volumes(conn)
+        vservers = get_vservers(conn)
 
-    if args.password is None:
-        if 'OS_PASSWORD' not in os.environ:
-            print 'OpenStack password environment variable OS_PASSWORD not set and -p not used'
-            sys.exit(1)
-        else:
-            creds['password'] = os.environ['OS_PASSWORD']
-    else:
-        creds['password'] = args.password
+        report_disks(cluster, disks)
+        report_aggregates(cluster, aggrs)
+        report_volumes(cluster, volumes, tenants)
+        report_vservers(cluster, vservers, volumes, tenants)
 
-    if args.tenant is None:
-        if 'OS_TENANT_NAME' not in os.environ:
-            print 'OpenStack tenant name environment variable OS_TENANT_NAME not set and -t not used'
-            sys.exit(1)
-        else:
-            creds['tenant_name'] = os.environ['OS_TENANT_NAME']
-    else:
-        creds['tenant_name'] = args.tenant
 
-    if args.auth_url is None:
-        if 'OS_AUTH_URL' not in os.environ:
-            print 'OpenStack auth url environment variable OS_AUTH_URL not set and -a not used'
-            sys.exit(1)
-        else:
-            creds['auth_url'] = os.environ['OS_AUTH_URL']
-    else:
-        creds['auth_url'] = args.auth_url
+def get_openstack_stats(tenants):
+    kc = get_keystone_client()
+    token = kc.auth_token
+    catalog = kc.service_catalog
+    swift_url = catalog.url_for(service_type='object-store',
+                                endpoint_type='adminURL',
+                                region_name='VicNode')
 
-    if args.swift_region is None:
-        if 'OS_SWIFT_REGION_NAME' not in os.environ:
-            print 'OpenStack swift region name environment variable OS_SWIFT_REGION_NAME not set and -s not used'
-            sys.exit(1)
-        else:
-            creds['swift_region_name'] = os.environ['OS_SWIFT_REGION_NAME']
-    else:
-        creds['swift_region_name'] = args.swift_region
+    print 'Vault and Compute Statistics (GB)'
+    print ', '.join(['tenant', 'vicnode_id', 'tenant_id',
+                     'vault_quota', 'vault_used',
+                     'compute_quota', 'compute_used'])
 
-    if args.cinder_region is None:
-        if 'OS_CINDER_REGION_NAME' not in os.environ:
-            print 'OpenStack cinder region name environment variable OS_CINDER_REGION_NAME not set and -c not used'
-            sys.exit(1)
-        else:
-            creds['cinder_region_name'] = os.environ['OS_CINDER_REGION_NAME']
-    else:
-        creds['cinder_region_name'] = args.cinder_region
+    for key, tenant in tenants.iteritems():
 
-    merit_allocations = list_merit_allocations(creds)
+        tenant_url = swift_url + 'AUTH_' + tenant.id
+        swift_usage = get_swift_usage(tenant_url, token)
+        cinder_usage = get_cinder_usage(tenant.id)
 
-    swift = swiftc.Connection(authurl=creds['auth_url'],
-                              user=creds['username'],
-                              key=creds['password'],
-                              tenant_name=creds['tenant_name'],
-                              insecure=creds['insecure'],
-                              os_options={'region_name': creds['swift_region_name']},
-                              auth_version='2.0')
-
-    swift.head_account()
-    swift_auth_url = re.sub('AUTH_.*', 'AUTH_', swift.url)
-
-    print 'tenant_id, vicnode_id, swift_quota, swift_used, cinder_quota, cinder_used, total_allocation_quota, total_allocation_used'
-
-    for tenant in merit_allocations:
-
-        # creds['region_name'] = environ['OS_SWIFT_REGION_NAME']
-        swift_usage_info = allocation_swift_usage(creds, tenant.id, swift_auth_url)
-
-        # creds['region_name'] = environ['OS_CINDER_REGION_NAME']
-        cinder_usage_info = allocation_cinder_usage(creds, tenant.id)
-
-        print ', '.join([tenant.id,
+        print ', '.join([tenant.name,
                          tenant.vicnode_id,
-                         str(swift_usage_info['gb_allocated']),
-                         str(round(swift_usage_info['gb_used'], 2)),
-                         str(cinder_usage_info['gb_allocated']),
-                         str(cinder_usage_info['gb_used']),
-                         str(swift_usage_info['gb_allocated'] + cinder_usage_info['gb_allocated']),
-                         str(swift_usage_info['gb_used'] + cinder_usage_info['gb_used'])])
+                         tenant.id,
+                         pretty_gb(swift_usage['gb_allocated']),
+                         pretty_gb(swift_usage['gb_used']),
+                         pretty_gb(cinder_usage['gb_allocated']),
+                         pretty_gb(cinder_usage['gb_used'])])
 
 
-def list_merit_allocations(creds):
-
-    try:
-        client = ks_client.Client(username=creds['username'],
-                                  password=creds['password'],
-                                  tenant_name=creds['tenant_name'],
-                                  insecure=creds['insecure'],
-                                  auth_url=creds['auth_url'],
-                                  region_name=creds['cinder_region_name'])
-    except:
-        print('Failed to connect to Keystone')
-        sys.exit(1)
-
-    return [tenant for tenant in client.tenants.list() if hasattr(tenant, 'vicnode_id')]
-
-
-def allocation_cinder_usage(creds, tenant_id):
-
+def get_cinder_usage(tenant_id):
     usage = {}
-
-    try:
-        cinder = cinderc.Client('1',
-                                creds['username'],
-                                creds['password'],
-                                project_id=creds['tenant_name'],
-                                auth_url=creds['auth_url'],
-                                insecure=creds['insecure'],
-                                region_name=creds['cinder_region_name'])
-    except:
-        print('Failed to connect to Cinder')
-        sys.exit(1)
-
-    quota_info = float(cinder.quotas.get(tenant_id).gigabytes)
-    if quota_info > 0:
-        usage['gb_allocated'] = float(cinder.quotas.get(tenant_id).gigabytes)
-    else:
-        usage['gb_allocated'] = float(0)
-
-    usage['gb_used'] = usage['gb_allocated']
+    cc = get_cinder_client()
+    quota = cc.quotas.get(tenant_id).gigabytes
+    usage['gb_allocated'] = usage['gb_used'] = quota
 
     return usage
 
 
-def allocation_swift_usage(creds, tenant_id, swift_auth_url):
-
+def get_swift_usage(tenant_url, token):
     usage = {}
+    usage['gb_allocated'] = usage['gb_used'] = 0
 
     try:
-        swift = swiftc.Connection(authurl=creds['auth_url'],
-                                  user=creds['username'],
-                                  key=creds['password'],
-                                  tenant_name=creds['tenant_name'],
-                                  insecure=creds['insecure'],
-                                  os_options={'region_name': creds['swift_region_name'],
-                                              'object_storage_url': swift_auth_url + tenant_id},
-                                  auth_version='2.0')
-    except:
-        print('Failed to connect to Swift')
-        sys.exit(1)
+        swift_account = swiftclient.head_account(url=tenant_url, token=token)
 
-    account_info = swift.head_account()
-
-    if 'x-account-meta-account-bytes' in account_info:
-        usage['gb_allocated'] = float(account_info['x-account-meta-account-bytes']) / 1024 / 1024 / 1024
-    else:
-        usage['gb_allocated'] = float(0)
-
-    usage['gb_used'] = float(account_info['x-account-bytes-used']) / 1024 / 1024 / 1024
+        if SWIFT_QUOTA_KEY in swift_account:
+            usage['gb_allocated'] = b_to_gb(swift_account[SWIFT_QUOTA_KEY])
+        usage['gb_used'] = b_to_gb(swift_account['x-account-bytes-used'])
+    except ClientException:
+        pass
 
     return usage
+
+
+def get_cinder_client():
+    auth_username = os.environ.get('OS_USERNAME')
+    auth_password = os.environ.get('OS_PASSWORD')
+    auth_tenant = os.environ.get('OS_TENANT_NAME')
+    auth_url = os.environ.get('OS_AUTH_URL')
+    auth_cacert = os.environ.get('OS_CACERT')
+
+    cc = cinderclient.Client('1', auth_username,
+                             auth_password,
+                             auth_tenant,
+                             auth_url,
+                             cacert=auth_cacert)
+    return cc
 
 
 def get_keystone_client():
-
     auth_username = os.environ.get('OS_USERNAME')
     auth_password = os.environ.get('OS_PASSWORD')
     auth_tenant = os.environ.get('OS_TENANT_NAME')
@@ -229,7 +142,6 @@ def get_keystone_client():
 
 
 def get_vicnode_tenants():
-
     tenants = {}
     kc = get_keystone_client()
     for tenant in kc.tenants.list():
@@ -237,6 +149,15 @@ def get_vicnode_tenants():
             tenants[tenant.id] = tenant
 
     return tenants
+
+
+def get_tenant(name_or_id):
+    kc = get_keystone_client()
+    try:
+        tenant = kc.tenants.get(name_or_id)
+    except NotFound:
+        tenant = kc.tenants.find(name=name_or_id)
+    return tenant
 
 
 def get_vicnode_id(tenants, tenant_id):
@@ -248,44 +169,37 @@ def get_vicnode_id(tenants, tenant_id):
     return vicnode_id
 
 
-def report_netapp(args):
-    conn = connect(args.cluster, args.username, args.password)
-    tenants = get_vicnode_tenants()
+def get_tenant_name(tenants, tenant_id):
+    if tenant_id in tenants:
+        tenant_name = tenants[tenant_id].name
+    else:
+        tenant_name = get_tenant(tenant_id).name
 
-    disks = get_disks(conn)
-    aggrs = get_aggrs(conn)
-    volumes = get_volumes(conn)
-    vservers = get_vservers(conn)
-
-    report_disks(disks)
-    report_aggregates(aggrs)
-    report_volumes(volumes, tenants)
-    report_vservers(vservers, volumes, tenants)
+    return tenant_name
 
 
-def report_disks(disks):
+def report_disks(cluster, disks):
     disk_stats = get_disk_stats(disks)
     disk_types = get_disk_types(disk_stats)
-    print_disk_stats(disk_stats, disk_types)
+    print_disk_stats(cluster, disk_stats, disk_types)
 
 
-def report_volumes(volumes, tenants):
-    print_volume_stats(volumes, tenants)
+def report_volumes(cluster, volumes, tenants):
+    print_volume_stats(cluster, volumes, tenants)
 
 
-def report_aggregates(aggrs):
+def report_aggregates(cluster, aggrs):
     aggr_stats = get_aggr_stats(aggrs)
-    print_aggr_stats(aggr_stats)
+    print_aggr_stats(cluster, aggr_stats)
 
 
-def report_vservers(vservers, volumes, tenants):
+def report_vservers(cluster, vservers, volumes, tenants):
     vserver_stats = get_vserver_stats(vservers, volumes)
-    print_vserver_stats(vserver_stats, tenants)
+    print_vserver_stats(cluster, vserver_stats, tenants)
 
 
-def connect(cluster, user, pw):
-    """ Initialise NetApp cluster connection and return connection object """
-
+def netapp_connect(cluster, user, pw):
+    """Initialise NetApp cluster connection and return connection object"""
     conn = NaServer(cluster, 1, 3)
     response = conn.set_style('LOGIN')
     if (response and response.results_errno() != 0):
@@ -336,8 +250,8 @@ def get_aggr_stats(aggrs):
     return stats
 
 
-def print_aggr_stats(aggr_stats):
-    print 'Aggregate Statistics'
+def print_aggr_stats(cluster, aggr_stats):
+    print 'Aggregate Statistics - %s' % cluster
     print ', '.join(['controller', 'aggregate', 'total', 'used', 'free'])
     for owner, data in aggr_stats.items():
         for item in data:
@@ -360,7 +274,8 @@ def get_vservers(conn):
     attributes = out.child_get('attributes-list')
     servers = attributes.children_get()
 
-    return [server for server in servers if server.child_get_string('vserver-type') == 'data']
+    return [server for server in servers
+            if server.child_get_string('vserver-type') == 'data']
 
 
 def get_vserver_stats(servers, volumes):
@@ -388,17 +303,26 @@ def get_vserver_stats(servers, volumes):
     return stats
 
 
-def print_vserver_stats(vserver_stats, tenants):
-    print 'VServer Statistics'
-    print ', '.join(['vicnode_id', 'vserver', 'total', 'used', 'free', 'volume_count'])
+def print_vserver_stats(cluster, vserver_stats, tenants):
+    print 'Market VServer Statistics (TB) - %s' % cluster
+    print ', '.join(['tenant', 'vicnode_id', 'vserver',
+                     'total', 'used', 'free', 'volume_count'])
+
     for vserver, data in vserver_stats.items():
         tenant_id = vserver.split('_')[1]
         vicnode_id = get_vicnode_id(tenants, tenant_id)
+        tenant_name = get_tenant_name(tenants, tenant_id)
         total = pretty_tb(data['total'])
         used = pretty_tb(data['used'])
         available = pretty_tb(data['available'])
         vol_count = str(data['volume_count'])
-        print ', '.join([vicnode_id, vserver, total, used, available, vol_count])
+        print ', '.join([tenant_name,
+                         vicnode_id,
+                         vserver,
+                         total,
+                         used,
+                         available,
+                         vol_count])
     print
 
 
@@ -416,9 +340,10 @@ def get_volumes(conn):
     return attributes.children_get()
 
 
-def print_volume_stats(volumes, tenants):
-    print 'Volume Statistics'
-    print ', '.join(['vicnode_id', 'name', 'vserver', 'aggr', 'total', 'used', 'free'])
+def print_volume_stats(cluster, volumes, tenants):
+    print 'Market Volume Statistics (TB) - %s' % cluster
+    print ', '.join(['tenant', 'vicnode_id', 'name', 'vserver', 'aggr',
+                     'total', 'used', 'free'])
 
     for volume in volumes:
         vol_id_attrs = volume.child_get('volume-id-attributes')
@@ -429,12 +354,19 @@ def print_volume_stats(volumes, tenants):
         if vserver.startswith('os_') and name.find('rootvol') != 0:
             tenant_id = vserver.split('_')[1]
             vicnode_id = get_vicnode_id(tenants, tenant_id)
+            tenant_name = get_tenant_name(tenants, tenant_id)
             aggr = vol_id_attrs.child_get_string('containing-aggregate-name')
             total = vol_space_attrs.child_get_string('size-total')
             used = vol_space_attrs.child_get_string('size-used')
             available = vol_space_attrs.child_get_string('size-available')
-            print ', '.join([vicnode_id, name, vserver, aggr, pretty_tb(total),
-                             pretty_tb(used), pretty_tb(available)])
+            print ', '.join([tenant_name,
+                             vicnode_id,
+                             name,
+                             vserver,
+                             aggr,
+                             pretty_tb(total),
+                             pretty_tb(used),
+                             pretty_tb(available)])
     print
 
 
@@ -488,16 +420,8 @@ def get_disk_types(disk_stats):
     return disk_types
 
 
-def pretty_tb(b):
-    return str(round(b_to_tb(b), 2))
-
-
-def b_to_tb(b):
-    return (float(b) / 1024.0 / 1024.0 / 1024.0 / 1024.0)
-
-
-def print_disk_stats(disk_stats, disk_types):
-    print 'Disk Statistics'
+def print_disk_stats(cluster, disk_stats, disk_types):
+    print 'Disk Statistics - %s' % cluster
     print 'controller, ' + ', '.join(disk_types)
 
     for owner, data in disk_stats.items():
@@ -510,6 +434,22 @@ def print_disk_stats(disk_stats, disk_types):
                 output += '0'
         print output
     print
+
+
+def pretty_gb(gb):
+    return str(round(gb, 3))
+
+
+def b_to_gb(b):
+    return (float(b) / 1024.0 / 1024.0 / 1024.0)
+
+
+def pretty_tb(b):
+    return str(round(b_to_tb(b), 3))
+
+
+def b_to_tb(b):
+    return (float(b) / 1024.0 / 1024.0 / 1024.0 / 1024.0)
 
 
 if __name__ == '__main__':
