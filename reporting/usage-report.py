@@ -11,10 +11,11 @@ sys.path.append('./NetApp/lib/python/NetApp')
 from NaServer import NaServer
 from NaElement import NaElement
 
-from os import environ
+import os
 import re
 
-from keystoneclient.v2_0 import client as keystonec
+from keystoneclient.v2_0 import client as ks_client
+from keystoneclient.exceptions import AuthorizationFailure
 from swiftclient import client as swiftc
 from cinderclient import client as cinderc
 
@@ -49,56 +50,56 @@ def report_allocation(args):
     creds['insecure'] = args.insecure
 
     if args.username is None:
-        if 'OS_USERNAME' not in environ:
+        if 'OS_USERNAME' not in os.environ:
             print 'OpenStack username environment variable OS_USERNAME not set and -u not used'
             sys.exit(1)
         else:
-            creds['username'] = environ['OS_USERNAME']
+            creds['username'] = os.environ['OS_USERNAME']
     else:
         creds['username'] = args.username
 
     if args.password is None:
-        if 'OS_PASSWORD' not in environ:
+        if 'OS_PASSWORD' not in os.environ:
             print 'OpenStack password environment variable OS_PASSWORD not set and -p not used'
             sys.exit(1)
         else:
-            creds['password'] = environ['OS_PASSWORD']
+            creds['password'] = os.environ['OS_PASSWORD']
     else:
         creds['password'] = args.password
 
     if args.tenant is None:
-        if 'OS_TENANT_NAME' not in environ:
+        if 'OS_TENANT_NAME' not in os.environ:
             print 'OpenStack tenant name environment variable OS_TENANT_NAME not set and -t not used'
             sys.exit(1)
         else:
-            creds['tenant_name'] = environ['OS_TENANT_NAME']
+            creds['tenant_name'] = os.environ['OS_TENANT_NAME']
     else:
         creds['tenant_name'] = args.tenant
 
     if args.auth_url is None:
-        if 'OS_AUTH_URL' not in environ:
+        if 'OS_AUTH_URL' not in os.environ:
             print 'OpenStack auth url environment variable OS_AUTH_URL not set and -a not used'
             sys.exit(1)
         else:
-            creds['auth_url'] = environ['OS_AUTH_URL']
+            creds['auth_url'] = os.environ['OS_AUTH_URL']
     else:
         creds['auth_url'] = args.auth_url
 
     if args.swift_region is None:
-        if 'OS_SWIFT_REGION_NAME' not in environ:
+        if 'OS_SWIFT_REGION_NAME' not in os.environ:
             print 'OpenStack swift region name environment variable OS_SWIFT_REGION_NAME not set and -s not used'
             sys.exit(1)
         else:
-            creds['swift_region_name'] = environ['OS_SWIFT_REGION_NAME']
+            creds['swift_region_name'] = os.environ['OS_SWIFT_REGION_NAME']
     else:
         creds['swift_region_name'] = args.swift_region
 
     if args.cinder_region is None:
-        if 'OS_CINDER_REGION_NAME' not in environ:
+        if 'OS_CINDER_REGION_NAME' not in os.environ:
             print 'OpenStack cinder region name environment variable OS_CINDER_REGION_NAME not set and -c not used'
             sys.exit(1)
         else:
-            creds['cinder_region_name'] = environ['OS_CINDER_REGION_NAME']
+            creds['cinder_region_name'] = os.environ['OS_CINDER_REGION_NAME']
     else:
         creds['cinder_region_name'] = args.cinder_region
 
@@ -138,7 +139,7 @@ def report_allocation(args):
 def list_merit_allocations(creds):
 
     try:
-        client = keystonec.Client(username=creds['username'],
+        client = ks_client.Client(username=creds['username'],
                                   password=creds['password'],
                                   tenant_name=creds['tenant_name'],
                                   insecure=creds['insecure'],
@@ -207,9 +208,49 @@ def allocation_swift_usage(creds, tenant_id, swift_auth_url):
     return usage
 
 
+def get_keystone_client():
+
+    auth_username = os.environ.get('OS_USERNAME')
+    auth_password = os.environ.get('OS_PASSWORD')
+    auth_tenant = os.environ.get('OS_TENANT_NAME')
+    auth_url = os.environ.get('OS_AUTH_URL')
+
+    try:
+        kc = ks_client.Client(username=auth_username,
+                              password=auth_password,
+                              tenant_name=auth_tenant,
+                              auth_url=auth_url)
+    except AuthorizationFailure as e:
+        print e
+        print 'Authorization failed, have you sourced your openrc?'
+        sys.exit(1)
+
+    return kc
+
+
+def get_vicnode_tenants():
+
+    tenants = {}
+    kc = get_keystone_client()
+    for tenant in kc.tenants.list():
+        if hasattr(tenant, 'vicnode_id'):
+            tenants[tenant.id] = tenant
+
+    return tenants
+
+
+def get_vicnode_id(tenants, tenant_id):
+    if tenant_id in tenants:
+        vicnode_id = tenants[tenant_id].vicnode_id
+    else:
+        vicnode_id = 'Unknown'
+
+    return vicnode_id
+
+
 def report_netapp(args):
     conn = connect(args.cluster, args.username, args.password)
-    print
+    tenants = get_vicnode_tenants()
 
     disks = get_disks(conn)
     aggrs = get_aggrs(conn)
@@ -218,8 +259,8 @@ def report_netapp(args):
 
     report_disks(disks)
     report_aggregates(aggrs)
-    report_volumes(volumes)
-    report_vservers(vservers, volumes)
+    report_volumes(volumes, tenants)
+    report_vservers(vservers, volumes, tenants)
 
 
 def report_disks(disks):
@@ -228,8 +269,8 @@ def report_disks(disks):
     print_disk_stats(disk_stats, disk_types)
 
 
-def report_volumes(volumes):
-    print_volume_stats(volumes)
+def report_volumes(volumes, tenants):
+    print_volume_stats(volumes, tenants)
 
 
 def report_aggregates(aggrs):
@@ -237,9 +278,9 @@ def report_aggregates(aggrs):
     print_aggr_stats(aggr_stats)
 
 
-def report_vservers(vservers, volumes):
+def report_vservers(vservers, volumes, tenants):
     vserver_stats = get_vserver_stats(vservers, volumes)
-    print_vserver_stats(vserver_stats)
+    print_vserver_stats(vserver_stats, tenants)
 
 
 def connect(cluster, user, pw):
@@ -296,7 +337,7 @@ def get_aggr_stats(aggrs):
 
 
 def print_aggr_stats(aggr_stats):
-    print 'Aggregate Statistics:'
+    print 'Aggregate Statistics'
     print ', '.join(['controller', 'aggregate', 'total', 'used', 'free'])
     for owner, data in aggr_stats.items():
         for item in data:
@@ -347,15 +388,17 @@ def get_vserver_stats(servers, volumes):
     return stats
 
 
-def print_vserver_stats(vserver_stats):
-    print 'VServer Statistics:'
-    print ', '.join(['vserver', 'total', 'used', 'free', 'volume_count'])
+def print_vserver_stats(vserver_stats, tenants):
+    print 'VServer Statistics'
+    print ', '.join(['vicnode_id', 'vserver', 'total', 'used', 'free', 'volume_count'])
     for vserver, data in vserver_stats.items():
+        tenant_id = vserver.split('_')[1]
+        vicnode_id = get_vicnode_id(tenants, tenant_id)
         total = pretty_tb(data['total'])
         used = pretty_tb(data['used'])
         available = pretty_tb(data['available'])
         vol_count = str(data['volume_count'])
-        print ', '.join([vserver, total, used, available, vol_count])
+        print ', '.join([vicnode_id, vserver, total, used, available, vol_count])
     print
 
 
@@ -373,9 +416,10 @@ def get_volumes(conn):
     return attributes.children_get()
 
 
-def print_volume_stats(volumes):
-    print 'Volume Statistics:'
-    print ', '.join(['name', 'vserver', 'aggr', 'total', 'used', 'free'])
+def print_volume_stats(volumes, tenants):
+    print 'Volume Statistics'
+    print ', '.join(['vicnode_id', 'name', 'vserver', 'aggr', 'total', 'used', 'free'])
+
     for volume in volumes:
         vol_id_attrs = volume.child_get('volume-id-attributes')
         vol_space_attrs = volume.child_get('volume-space-attributes')
@@ -383,11 +427,13 @@ def print_volume_stats(volumes):
         name = vol_id_attrs.child_get_string('name')
 
         if vserver.startswith('os_') and name.find('rootvol') != 0:
+            tenant_id = vserver.split('_')[1]
+            vicnode_id = get_vicnode_id(tenants, tenant_id)
             aggr = vol_id_attrs.child_get_string('containing-aggregate-name')
             total = vol_space_attrs.child_get_string('size-total')
             used = vol_space_attrs.child_get_string('size-used')
             available = vol_space_attrs.child_get_string('size-available')
-            print ', '.join([name, vserver, aggr, pretty_tb(total),
+            print ', '.join([vicnode_id, name, vserver, aggr, pretty_tb(total),
                              pretty_tb(used), pretty_tb(available)])
     print
 
@@ -451,7 +497,7 @@ def b_to_tb(b):
 
 
 def print_disk_stats(disk_stats, disk_types):
-    print 'Disk Statistics:'
+    print 'Disk Statistics'
     print 'controller, ' + ', '.join(disk_types)
 
     for owner, data in disk_stats.items():
