@@ -9,34 +9,66 @@
 import os
 import argparse
 
-from swiftclient import client
+from swiftclient import client as swiftclient
+
+SWIFT_QUOTA_KEY = 'X-Account-Meta-Quota-Bytes'.lower()
 
 
-def create_swift_account(sc, tenant_id, quota_bytes):
+def set_swift_quota(sc, tenant_id, quota):
+    tenant_url, token = get_swift_tenant_connection(sc, tenant_id)
+    try:
+        print 'Setting quota for tenant %s to %s bytes' % \
+            (tenant_id, quota)
+        swiftclient.post_account(url=tenant_url,
+                                 token=token,
+                                 headers={SWIFT_QUOTA_KEY: quota})
+    except:
+        print 'Failed to set quota for tenant %s to %s bytes' % \
+            (tenant_id, quota)
+
+
+def get_swift_tenant_connection(sc, tenant_id):
     url, token = sc.get_auth()
     base_url = url.split('_')[0] + '_'
-    tenant_url = base_url + tenant_id
+    return base_url + tenant_id, token
 
-    client.post_account(url=tenant_url,
-                        token=token,
-                        headers={'X-Account-Meta-Quota-Bytes': quota_bytes})
+
+def get_swift_quota(sc, tenant_id):
+    tenant_url, token = get_swift_tenant_connection(sc, tenant_id)
+    swift_account = swiftclient.head_account(url=tenant_url, token=token)
+    return swift_account.get(SWIFT_QUOTA_KEY, -1)
 
 
 def get_swift_client():
-
     auth_username = os.environ.get('OS_USERNAME')
     auth_password = os.environ.get('OS_PASSWORD')
     auth_tenant = os.environ.get('OS_TENANT_NAME')
     auth_url = os.environ.get('OS_AUTH_URL')
 
-    sc = client.Connection(authurl=auth_url,
-                           user=auth_username,
-                           key=auth_password,
-                           tenant_name=auth_tenant,
-                           auth_version=2,
-                           os_options={'region_name': 'VicNode'})
+    sc = swiftclient.Connection(authurl=auth_url,
+                                user=auth_username,
+                                key=auth_password,
+                                tenant_name=auth_tenant,
+                                auth_version=2,
+                                os_options={'region_name': 'VicNode'})
 
     return sc
+
+
+def pretty_gb(b):
+    return str(round(b_to_gb(b), 3))
+
+
+def b_to_gb(b):
+    return (float(b) / 1024.0 / 1024.0 / 1024.0)
+
+
+def pretty_tb(b):
+    return str(round(b_to_tb(b), 3))
+
+
+def b_to_tb(b):
+    return (float(b) / 1024.0 / 1024.0 / 1024.0 / 1024.0)
 
 
 def collect_args():
@@ -59,4 +91,13 @@ if __name__ == '__main__':
     quota_bytes = args.bytes
 
     sc = get_swift_client()
-    create_swift_account(sc, project_id, quota_bytes)
+
+    quota = get_swift_quota(sc, project_id)
+    print 'Current quota for tenant %s:   %s bytes (%s GB)' % \
+        (project_id, quota, pretty_gb(quota))
+
+    set_swift_quota(sc, project_id, quota_bytes)
+
+    quota = get_swift_quota(sc, project_id)
+    print 'New quota for tenant %s:       %s bytes (%s GB)' % \
+        (project_id, quota, pretty_gb(quota))
