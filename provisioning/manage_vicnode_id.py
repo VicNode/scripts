@@ -1,5 +1,11 @@
 #!/usr/bin/env python
 
+# VicNode id creation script
+#
+# Adds a VicNode ID to a tenant
+#
+
+
 import os
 import sys
 import argparse
@@ -36,13 +42,19 @@ def get_tenant(keystone, name_or_id):
     return tenant
 
 
-def update_vicnode_id(kc, tenant_id, vicnode_id):
+def update_vicnode_id(tenant, vicnode_id):
     """Used in RDSI reporting to determine if the allocation should appear
     in the report.
 
     """
-    tenant = get_tenant(kc, tenant_id)
-    kc.tenants.update(tenant.id, vicnode_id=vicnode_id)
+    if vicnode_id is not None:
+        print 'Updating tenant %s with VicNode ID %s' % (tenant.id, vicnode_id)
+        kc.tenants.update(tenant.id, vicnode_id=vicnode_id)
+
+
+def get_vicnode_id(tenant):
+    if hasattr(tenant, 'vicnode_id'):
+        return tenant.vicnode_id
 
 
 def collect_args():
@@ -50,8 +62,8 @@ def collect_args():
     parser = argparse.ArgumentParser(argument_default=argparse.SUPPRESS)
     parser.add_argument('-t', '--tenant_id', action='store',
                         required=True, help='The tenant ID')
-    parser.add_argument('-v', '--vicnode_id', action='store',
-                        required=True, help='The new VicNode id of the tenant')
+    parser.add_argument('-v', '--vicnode_id', action='store', default=None,
+                        required=False, help='The new VicNode id of the tenant')
     return parser
 
 
@@ -63,4 +75,9 @@ if __name__ == '__main__':
 
     kc = get_keystone_client()
 
-    tenant = update_vicnode_id(kc, tenant_id, vicnode_id)
+    tenant = get_tenant(kc, tenant_id)
+    current_vicnode_id = get_vicnode_id(tenant)
+    print 'Existing VicNode ID: %s' % current_vicnode_id
+
+    if vicnode_id is not None:
+        update_vicnode_id(tenant, vicnode_id)
