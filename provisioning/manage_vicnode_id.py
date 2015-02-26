@@ -60,8 +60,8 @@ def get_vicnode_id(tenant):
 def collect_args():
 
     parser = argparse.ArgumentParser(argument_default=argparse.SUPPRESS)
-    parser.add_argument('-t', '--tenant_id', action='store',
-                        required=True, help='The tenant ID')
+    parser.add_argument('-p', '--project_id', action='store',
+                        required=True, help='The project ID')
     parser.add_argument('-v', '--vicnode_id', action='store', default=None,
                         required=False, help='The new VicNode id of the tenant')
     return parser
@@ -70,12 +70,12 @@ def collect_args():
 if __name__ == '__main__':
 
     args = vars(collect_args().parse_args())
-    tenant_id = args['tenant_id']
+    project_id = args['project_id']
     vicnode_id = args['vicnode_id']
 
     kc = get_keystone_client()
 
-    tenant = get_tenant(kc, tenant_id)
+    tenant = get_tenant(kc, project_id)
     current_vicnode_id = get_vicnode_id(tenant)
     print 'Existing VicNode ID: %s' % current_vicnode_id
 
