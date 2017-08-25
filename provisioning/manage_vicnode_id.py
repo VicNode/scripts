@@ -5,40 +5,19 @@
 # Adds a VicNode ID to a tenant
 #
 
-
 import os
 import sys
 import argparse
 
-from keystoneclient.v2_0 import client as ks_client
-from keystoneclient.exceptions import AuthorizationFailure, NotFound
 
-
-def get_keystone_client():
-
-    auth_username = os.environ.get('OS_USERNAME')
-    auth_password = os.environ.get('OS_PASSWORD')
-    auth_tenant = os.environ.get('OS_TENANT_NAME')
-    auth_url = os.environ.get('OS_AUTH_URL')
-
-    try:
-        kc = ks_client.Client(username=auth_username,
-                              password=auth_password,
-                              tenant_name=auth_tenant,
-                              auth_url=auth_url)
-    except AuthorizationFailure as e:
-        print e
-        print 'Authorization failed, have you sourced your openrc?'
-        sys.exit(1)
-
-    return kc
-
+from keystoneauth1 import session, identity
+from keystoneclient import client as ks_client
 
 def get_tenant(keystone, name_or_id):
     try:
-        tenant = keystone.tenants.get(name_or_id)
+        tenant = keystone.projects.get(name_or_id)
     except NotFound:
-        tenant = keystone.tenants.find(name=name_or_id)
+        tenant = keystone.projects.find(name=name_or_id)
     return tenant
 
 
@@ -49,7 +28,7 @@ def update_vicnode_id(tenant, vicnode_id):
     """
     if vicnode_id is not None:
         print 'Updating tenant %s with VicNode ID %s' % (tenant.id, vicnode_id)
-        kc.tenants.update(tenant.id, vicnode_id=vicnode_id)
+        kc.projects.update(tenant.id, vicnode_id=vicnode_id)
 
 
 def get_vicnode_id(tenant):
@@ -66,6 +45,21 @@ def collect_args():
                         required=False, help='The new VicNode id of the tenant')
     return parser
 
+def get_session():
+  # Return the session needed for python-openstackclient API libraries
+  auth_username = os.environ.get('OS_USERNAME')
+  auth_password = os.environ.get('OS_PASSWORD')
+  auth_tenant = os.environ.get('OS_TENANT_NAME')
+  auth_url = os.environ.get('OS_AUTH_URL')
+
+  auth = identity.v3.Password(username=auth_username,
+                              password=auth_password,
+                              project_name=auth_tenant,
+                              project_domain_name='Default',
+                              user_domain_name='Default',
+                              auth_url=auth_url + "/v3")
+  
+  return session.Session(auth=auth)
 
 if __name__ == '__main__':
 
@@ -73,7 +67,7 @@ if __name__ == '__main__':
     project_id = args['project_id']
     vicnode_id = args['vicnode_id']
 
-    kc = get_keystone_client()
+    kc = ks_client.Client(session=get_session())
 
     tenant = get_tenant(kc, project_id)
     current_vicnode_id = get_vicnode_id(tenant)
