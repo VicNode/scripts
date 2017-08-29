@@ -19,13 +19,13 @@ SWIFT_QUOTA_KEY = 'X-Account-Meta-Quota-Bytes'.lower()
 def set_swift_quota(sc, tenant_id, quota):
     tenant_url, token = get_swift_tenant_connection(sc, tenant_id)
     try:
-        print 'Setting quota for tenant %s to %s bytes' % \
+        print 'Setting quota for project %s to %s bytes' % \
             (tenant_id, quota)
         swiftclient.post_account(url=tenant_url,
                                  token=token,
                                  headers={SWIFT_QUOTA_KEY: quota})
     except:
-        print 'Failed to set quota for tenant %s to %s bytes' % \
+        print 'Failed to set quota for project %s to %s bytes' % \
             (tenant_id, quota)
 
 
@@ -44,26 +44,26 @@ def get_swift_quota(sc, tenant_id):
     try:
         swift_account = swiftclient.head_account(url=tenant_url, token=token)
     except sc_exception:
-        print 'Tenant %s has no swift quota' % tenant_id
+        print 'Project %s has no swift quota' % tenant_id
         return
     return swift_account.get(SWIFT_QUOTA_KEY, -1)
-
 
 def get_swift_client():
     auth_username = os.environ.get('OS_USERNAME')
     auth_password = os.environ.get('OS_PASSWORD')
-    auth_tenant = os.environ.get('OS_TENANT_NAME')
-    auth_url = os.environ.get('OS_AUTH_URL')
+    auth_url = os.environ.get('OS_AUTH_URL')+"/v3"
+    auth_options = {
+        'region_name': 'VicNode',
+        'project_name': os.environ.get('OS_TENANT_NAME')
+    }
 
     sc = swiftclient.Connection(authurl=auth_url,
                                 user=auth_username,
                                 key=auth_password,
-                                tenant_name=auth_tenant,
-                                auth_version=2,
-                                os_options={'region_name': 'VicNode'})
+                                auth_version='3',
+                                os_options=auth_options)
 
     return sc
-
 
 def pretty_gb(b):
     return str(round(b_to_gb(b), 3))
@@ -132,12 +132,12 @@ if __name__ == '__main__':
 
     quota = get_swift_quota(sc, project_id)
     if quota is not None:
-        print 'Current quota for tenant %s:   %s bytes (%s GB)' % \
+        print 'Current quota for project %s:   %s bytes (%s GB)' % \
             (project_id, quota, pretty_gb(quota))
 
     if quota_bytes >= 0:
         set_swift_quota(sc, project_id, quota_bytes)
 
         quota = get_swift_quota(sc, project_id)
-        print 'New quota for tenant %s:       %s bytes (%s GB)' % \
+        print 'New quota for project %s:       %s bytes (%s GB)' % \
             (project_id, quota, pretty_gb(quota))
