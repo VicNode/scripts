@@ -67,7 +67,7 @@ def pretty_gb(b):
 
 
 def b_to_gb(b):
-    return (float(b) / 1000.0 / 1000.0 / 1000.0)
+    return (float(b) / 1024.0 / 1024.0 / 1024.0)
 
 
 def pretty_tb(b):
@@ -75,12 +75,12 @@ def pretty_tb(b):
 
 
 def b_to_tb(b):
-    return (float(b) / 1000.0 / 1000.0 / 1000.0 / 1000.0)
+    return (float(b) / 1024.0 / 1024.0 / 1024.0 / 1024.0)
 
 
 def tb_to_b(tb):
     try:
-        b = int(tb) * 1000 * 1000 * 1000 * 1000
+        b = int(tb) * 1024 * 1024 * 1024 * 1024
     except ValueError as e:
         print e
         print 'Error: Invalid TB value specified: %s' % tb
@@ -90,7 +90,7 @@ def tb_to_b(tb):
 
 def gb_to_b(gb):
     try:
-        b = int(gb) * 1000 * 1000 * 1000
+        b = int(gb) * 1024 * 1024 * 1024
     except ValueError as e:
         print e
         print 'Error: Invalid GB value specified: %s' % gb
